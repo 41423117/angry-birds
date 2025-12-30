@@ -55,10 +55,7 @@ class Pig:
 
     def draw(self):
         if self.alive:
-            ctx.fillStyle = "saddlebrown"
-            for rx, ry, rw, rh in self.house_blocks:
-                ctx.fillRect(self.x + rx - 40 * self.size_factor, self.y + ry, rw, rh)
-            # 只有當圖片載入後才繪製
+            # 只繪製豬的圖片，隱藏房子
             if pig_img.complete:
                 # 根據大小調整圖片尺寸
                 ctx.drawImage(pig_img, self.x, self.y, self.w, self.h)
@@ -463,7 +460,7 @@ def loop():
     for p in pigs: 
         p.update(pigs)
     
-    # 繪製豬
+    # 繪製豬（現在只顯示豬圖片，不顯示房子）
     for p in pigs: 
         p.draw()
     
