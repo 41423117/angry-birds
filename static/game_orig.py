@@ -4,24 +4,15 @@ import time
 
 canvas = document["gameCanvas"]
 ctx = canvas.getContext("2d")
-
-# 設定手機端適配的尺寸
-WIDTH = min(window.innerWidth - 20, 800)  # 最大800px，但適應手機寬度
-HEIGHT = min(window.innerHeight - 100, 500)  # 最大500px，但適應手機高度
-
-# 更新畫布尺寸
-canvas.width = WIDTH
-canvas.height = HEIGHT
-canvas.style.width = f"{WIDTH}px"
-canvas.style.height = f"{HEIGHT}px"
+WIDTH, HEIGHT = 800, 400
 
 # --- 圖片處理：確保載入完成 ---
 bird_img = html.IMG(src="/static/images/bird.png")
 pig_img = html.IMG(src="/static/images/pig.png")
 
-# 遊戲常數 - 根據手機屏幕調整
-SLING_X, SLING_Y = int(WIDTH * 0.15), int(HEIGHT * 0.75)  # 彈弓位置在左下角
-MAX_SHOTS = 10
+# 遊戲常數 - 改成20發鳥
+SLING_X, SLING_Y = 120, 300
+MAX_SHOTS = 20  # 改成20發
 
 # 遊戲狀態
 shots_fired = 0
@@ -32,7 +23,6 @@ projectile = None
 sent = False
 game_phase = "playing"
 game_over_countdown = 0
-touch_start_time = 0  # 用於防止誤觸
 
 # ------------------------------------------
 # 類別
@@ -40,33 +30,37 @@ touch_start_time = 0  # 用於防止誤觸
 class Pig:
     def __init__(self, x, y, size_factor=1.0):
         self.x, self.y = x, y
-        # 根據手機屏幕調整大小
-        base_size = int(30 * (min(WIDTH, HEIGHT) / 500))  # 基於屏幕尺寸調整
-        self.size_factor = min(1.5, max(0.8, size_factor))
+        # 隨機大小，最大不超過原本的1.5倍
+        base_size = 40
+        self.size_factor = min(1.5, max(0.8, size_factor))  # 限制在0.8到1.5倍之間
         self.w, self.h = int(base_size * self.size_factor), int(base_size * self.size_factor)
         self.alive = True
-        
         # 根據大小調整房子的尺寸
-        house_width = 90 * self.size_factor
-        house_height = 40 * self.size_factor
-        roof_thickness = 12 * self.size_factor
-        wall_thickness = 12 * self.size_factor
+        house_width = 120 * self.size_factor
+        house_height = 50 * self.size_factor
+        roof_thickness = 15 * self.size_factor
+        wall_thickness = 15 * self.size_factor
         
         self.house_blocks = [
-            (0, self.h, house_width, roof_thickness),
-            (0, -roof_thickness, wall_thickness, house_height),
-            (house_width - wall_thickness, -roof_thickness, wall_thickness, house_height),
-            (0, -roof_thickness * 2, house_width, roof_thickness)
+            (0, self.h, house_width, roof_thickness),  # 底部屋頂
+            (0, -roof_thickness, wall_thickness, house_height),  # 左牆
+            (house_width - wall_thickness, -roof_thickness, wall_thickness, house_height),  # 右牆
+            (0, -roof_thickness * 2, house_width, roof_thickness)  # 頂部屋頂
         ]
-        self.last_hit_time = time.time()
-        self.idle_timer = 0
+        self.last_hit_time = time.time()  # 記錄最後一次被擊中的時間
+        self.idle_timer = 0  # 閒置計時器
+        self.move_timer = 0  # 移動計時器
+        self.move_speed_x = (random() - 0.5) * 1.5  # 初始隨機移動速度
+        self.move_speed_y = (random() - 0.5) * 1.5
 
     def draw(self):
         if self.alive:
             ctx.fillStyle = "saddlebrown"
             for rx, ry, rw, rh in self.house_blocks:
-                ctx.fillRect(self.x + rx - 30 * self.size_factor, self.y + ry, rw, rh)
+                ctx.fillRect(self.x + rx - 40 * self.size_factor, self.y + ry, rw, rh)
+            # 只有當圖片載入後才繪製
             if pig_img.complete:
+                # 根據大小調整圖片尺寸
                 ctx.drawImage(pig_img, self.x, self.y, self.w, self.h)
 
     def hit(self, px, py):
@@ -81,119 +75,189 @@ class Pig:
 
     def relocate(self, other_pigs):
         """重新定位豬的位置，確保不會與其他豬重疊"""
-        MAX_ATTEMPTS = 50
-        MIN_X, MAX_X = int(WIDTH * 0.5), WIDTH - self.w - 50  # 右半邊區域
-        MIN_Y, MAX_Y = int(HEIGHT * 0.3), HEIGHT - self.h - 20
+        MAX_ATTEMPTS = 100
+        MIN_X, MAX_X = 450, WIDTH - self.w - 120
+        MIN_Y, MAX_Y = 200, HEIGHT - self.h - 15
         
         for attempt in range(MAX_ATTEMPTS):
+            # 嘗試隨機位置
             new_x = MIN_X + random() * (MAX_X - MIN_X)
             new_y = MIN_Y + random() * (MAX_Y - MIN_Y)
             
+            # 臨時設定位置以檢查碰撞
             old_x, old_y = self.x, self.y
             self.x, self.y = new_x, new_y
             
+            # 檢查是否與其他豬重疊
             collision = False
             for pig in other_pigs:
                 if pig is not self and pig.alive and self.check_collision(pig):
                     collision = True
                     break
             
+            # 如果沒有碰撞，保持新位置
             if not collision:
-                self.last_hit_time = time.time()
+                self.last_hit_time = time.time()  # 重置計時器
+                # 重新設定隨機移動速度
+                self.move_speed_x = (random() - 0.5) * 1.5
+                self.move_speed_y = (random() - 0.5) * 1.5
                 return True
             
+            # 如果有碰撞，恢復原位置
             self.x, self.y = old_x, old_y
         
+        # 如果找不到合適位置，嘗試網格佈局
         return self.find_grid_position(other_pigs, MIN_X, MAX_X, MIN_Y, MAX_Y)
 
     def find_grid_position(self, other_pigs, min_x, max_x, min_y, max_y):
         """在網格中尋找可用位置"""
-        grid_size = 50
+        grid_size = 60  # 網格大小
         
-        cols = min(3, int((max_x - min_x) / grid_size))
-        rows = min(2, int((max_y - min_y) / grid_size))
+        # 計算可用的網格單元
+        cols = int((max_x - min_x) / grid_size)
+        rows = int((max_y - min_y) / grid_size)
         
+        # 嘗試所有網格位置
         for r in range(rows):
             for c in range(cols):
-                new_x = min_x + c * grid_size + grid_size / 2 - self.w / 2
-                new_y = min_y + r * grid_size + grid_size / 2 - self.h / 2
+                new_x = min_x + c * grid_size
+                new_y = min_y + r * grid_size
                 
+                # 臨時設定位置以檢查碰撞
                 old_x, old_y = self.x, self.y
                 self.x, self.y = new_x, new_y
                 
+                # 檢查是否與其他豬重疊
                 collision = False
                 for pig in other_pigs:
                     if pig is not self and pig.alive and self.check_collision(pig):
                         collision = True
                         break
                 
+                # 如果沒有碰撞，保持新位置
                 if not collision:
-                    self.last_hit_time = time.time()
+                    self.last_hit_time = time.time()  # 重置計時器
+                    # 重新設定隨機移動速度
+                    self.move_speed_x = (random() - 0.5) * 1.5
+                    self.move_speed_y = (random() - 0.5) * 1.5
                     return True
                 
+                # 如果有碰撞，恢復原位置
                 self.x, self.y = old_x, old_y
         
+        # 如果還是找不到位置，放在一個默認位置
         self.x = min_x + random() * (max_x - min_x)
         self.y = min_y + random() * (max_y - min_y)
         self.last_hit_time = time.time()
+        # 重新設定隨機移動速度
+        self.move_speed_x = (random() - 0.5) * 1.5
+        self.move_speed_y = (random() - 0.5) * 1.5
         return False
 
     def update(self, other_pigs):
         if not self.alive:
             return
             
-        current_time = time.time()
-        if current_time - self.last_hit_time > 30:  # 30秒
-            self.relocate(other_pigs)
+        # 增加移動計時器
+        self.move_timer += 1
+        
+        # 豬一開始就隨機移動，不需要等待30秒
+        # 每30幀改變一次移動方向
+        if self.move_timer > 30:
+            # 隨機改變移動方向
+            self.move_speed_x += (random() - 0.5) * 0.5
+            self.move_speed_y += (random() - 0.5) * 0.5
             
+            # 限制最大速度
+            max_speed = 2.0
+            self.move_speed_x = max(-max_speed, min(max_speed, self.move_speed_x))
+            self.move_speed_y = max(-max_speed, min(max_speed, self.move_speed_y))
+            
+            self.move_timer = 0
+        
+        # 更新位置
+        old_x, old_y = self.x, self.y
+        self.x += self.move_speed_x
+        self.y += self.move_speed_y
+        
+        # 邊界檢查
+        MIN_X, MAX_X = 450, WIDTH - self.w - 120
+        MIN_Y, MAX_Y = 200, HEIGHT - self.h - 15
+        
+        # 如果碰到邊界，反彈
+        if self.x < MIN_X or self.x > MAX_X:
+            self.move_speed_x = -self.move_speed_x * 0.8  # 反彈並減速
+            self.x = max(MIN_X, min(MAX_X, self.x))
+        
+        if self.y < MIN_Y or self.y > MAX_Y:
+            self.move_speed_y = -self.move_speed_y * 0.8  # 反彈並減速
+            self.y = max(MIN_Y, min(MAX_Y, self.y))
+        
+        # 檢查是否與其他豬碰撞
+        collision = False
+        collision_pig = None
+        for pig in other_pigs:
+            if pig is not self and pig.alive and self.check_collision(pig):
+                collision = True
+                collision_pig = pig
+                break
+        
+        # 如果發生碰撞，反彈並稍微分開
+        if collision:
+            # 恢復到碰撞前的位置
+            self.x, self.y = old_x, old_y
+            
+            # 計算反彈方向
+            dx = self.x - collision_pig.x
+            dy = self.y - collision_pig.y
+            
+            # 避免除以零
+            distance = max(0.1, (dx**2 + dy**2)**0.5)
+            
+            # 標準化方向向量
+            dx /= distance
+            dy /= distance
+            
+            # 反彈
+            self.move_speed_x = dx * 1.5
+            self.move_speed_y = dy * 1.5
+            
+            # 稍微分開
+            self.x += dx * 5
+            self.y += dy * 5
+            
+            # 確保不超出邊界
+            self.x = max(MIN_X, min(MAX_X, self.x))
+            self.y = max(MIN_Y, min(MAX_Y, self.y))
+        
+        # 原有的閒置計時器邏輯（現在主要用於隨機移動）
         self.idle_timer += 1
-        if self.idle_timer > 60:
-            if random() < 0.05:
-                old_x, old_y = self.x, self.y
-                self.x += (random() - 0.5) * 15
-                self.y += (random() - 0.5) * 8
-                
-                self.x = max(WIDTH * 0.5, min(WIDTH - self.w - 50, self.x))
-                self.y = max(HEIGHT * 0.3, min(HEIGHT - self.h - 20, self.y))
-                
-                collision = False
-                for pig in other_pigs:
-                    if pig is not self and pig.alive and self.check_collision(pig):
-                        collision = True
-                        break
-                
-                if collision:
-                    self.x, self.y = old_x, old_y
-                
-                self.idle_timer = 0
+        if self.idle_timer > 60:  # 每60幀檢查一次
+            # 有10%的機率改變移動方向
+            if random() < 0.1:
+                self.move_speed_x = (random() - 0.5) * 2.0
+                self.move_speed_y = (random() - 0.5) * 2.0
+            
+            self.idle_timer = 0
 
 class Bird:
     def __init__(self, x, y, vx, vy):
-        # 根據屏幕尺寸調整鳥的大小
-        base_size = int(30 * (min(WIDTH, HEIGHT) / 500))
         self.x, self.y, self.vx, self.vy = x, y, vx, vy
-        self.w, self.h = base_size, base_size
+        self.w, self.h = 35, 35
         self.active = True
 
     def update(self):
         global total_score
-        if not self.active: 
-            return
-        self.vy += 0.25  # 重力調小一點，適應手機屏幕
+        if not self.active: return
+        self.vy += 0.35
         self.x += self.vx
         self.y += self.vy
-        
-        # 邊界檢查
-        if (self.y > HEIGHT - self.h or 
-            self.x > WIDTH or 
-            self.x < 0 or
-            self.y < 0):
+        if self.y > HEIGHT - self.h or self.x > WIDTH or self.x < 0:
             self.active = False
-            
         for p in pigs:
             if p.hit(self.x + self.w / 2, self.y + self.h / 2):
                 p.relocate(pigs)
-                total_score += int(50 * p.size_factor)
+                total_score += int(50 * p.size_factor)  # 根據大小給分
                 document["score_display"].text = str(total_score)
                 self.active = False
                 break
@@ -209,34 +273,39 @@ pigs = []
 
 def init_level():
     global pigs
+    # 建立6隻豬，每隻大小不同（最大不超過1.5倍）
     pigs = []
     
-    # 為手機屏幕優化的初始位置
+    # 預設的位置（這些是原先豬會出現的位置）
     original_positions = [
-        (int(WIDTH * 0.6), int(HEIGHT * 0.4)),
-        (int(WIDTH * 0.7), int(HEIGHT * 0.5)),
-        (int(WIDTH * 0.8), int(HEIGHT * 0.3)),
-        (int(WIDTH * 0.65), int(HEIGHT * 0.3)),
-        (int(WIDTH * 0.75), int(HEIGHT * 0.4)),
-        (int(WIDTH * 0.6), int(HEIGHT * 0.5))
+        (500, 250),  # 右上角
+        (600, 300),  # 右中
+        (700, 200),  # 右下角
+        (550, 200),  # 右上方
+        (650, 250),  # 右中偏上
+        (500, 300)   # 右中偏下
     ]
     
+    # 調整位置確保不會重疊
     for i in range(6):
-        size_factor = 0.8 + (i / 5) * 0.7
+        # 創建不同大小的豬，從0.8倍到1.5倍
+        size_factor = 0.8 + (i / 5) * 0.7  # 均勻分布從0.8到1.5
         pig = Pig(original_positions[i][0], original_positions[i][1], size_factor)
         pigs.append(pig)
     
+    # 檢查並調整重疊的豬
     adjust_pig_positions()
 
 def adjust_pig_positions():
     """調整豬的位置，確保它們不會重疊"""
-    MAX_ATTEMPTS = 50
-    MIN_X, MAX_X = int(WIDTH * 0.5), WIDTH - 60
-    MIN_Y, MAX_Y = int(HEIGHT * 0.3), HEIGHT - 60
+    MAX_ATTEMPTS = 100
+    MIN_X, MAX_X = 450, WIDTH - 40 - 120  # 考慮豬的最大寬度
+    MIN_Y, MAX_Y = 200, HEIGHT - 40 - 15  # 考慮豬的最大高度
     
     for i in range(len(pigs)):
         pig = pigs[i]
         
+        # 檢查與其他豬的碰撞
         for attempt in range(MAX_ATTEMPTS):
             collision = False
             for j in range(len(pigs)):
@@ -244,17 +313,22 @@ def adjust_pig_positions():
                     collision = True
                     break
             
+            # 如果沒有碰撞，繼續檢查下一隻豬
             if not collision:
                 break
             
-            offset_x = (random() - 0.5) * 80
-            offset_y = (random() - 0.5) * 60
+            # 如果有碰撞，移動這隻豬到新位置
+            # 計算新位置（在原位置的基礎上稍微偏移）
+            offset_x = (random() - 0.5) * 100
+            offset_y = (random() - 0.5) * 80
             pig.x = max(MIN_X, min(MAX_X, pig.x + offset_x))
             pig.y = max(MIN_Y, min(MAX_Y, pig.y + offset_y))
         
+        # 如果還是碰撞，使用網格佈局
         if collision:
-            cols = 3
-            rows = 2
+            # 使用網格佈局重新定位
+            cols = 3  # 3列
+            rows = 2  # 2行
             grid_width = (MAX_X - MIN_X) / cols
             grid_height = (MAX_Y - MIN_Y) / rows
             
@@ -278,290 +352,114 @@ def update_shots_remaining():
     document["shots_remaining"].text = str(MAX_SHOTS - shots_fired)
 
 def get_pos(evt):
-    """處理手機觸控座標"""
+    # 重要：處理手機縮放後的精確座標
     rect = canvas.getBoundingClientRect()
+    # 計算畫布與實際 CSS 顯示尺寸的比例
+    scale_x = canvas.width / rect.width
+    scale_y = canvas.height / rect.height
     
-    # 針對手機觸控優化的座標計算
     if hasattr(evt, "touches") and len(evt.touches) > 0:
         client_x, client_y = evt.touches[0].clientX, evt.touches[0].clientY
     elif hasattr(evt, "changedTouches") and len(evt.changedTouches) > 0:
         client_x, client_y = evt.changedTouches[0].clientX, evt.changedTouches[0].clientY
     else:
         client_x, client_y = evt.clientX, evt.clientY
-    
-    # 計算實際畫布座標
-    scale_x = canvas.width / rect.width
-    scale_y = canvas.height / rect.height
-    
-    x = (client_x - rect.left) * scale_x
-    y = (client_y - rect.top) * scale_y
-    
-    # 限制在畫布範圍內
-    x = max(0, min(x, canvas.width))
-    y = max(0, min(y, canvas.height))
-    
-    return x, y
+        
+    return (client_x - rect.left) * scale_x, (client_y - rect.top) * scale_y
 
-def handle_touch_start(evt):
-    """處理手機觸控開始"""
-    global mouse_down, mouse_pos, touch_start_time
+def mousedown(evt):
+    global mouse_down, mouse_pos
     evt.preventDefault()
-    
-    # 防止短時間多次觸發
-    current_time = time.time()
-    if current_time - touch_start_time < 0.3:  # 300ms防抖
-        return
-    
-    touch_start_time = current_time
-    
     if game_phase == "playing" and projectile is None and shots_fired < MAX_SHOTS:
         mouse_down = True
         mouse_pos = get_pos(evt)
-        # 在手機上提供視覺反饋
-        canvas.style.opacity = "0.9"
 
-def handle_touch_move(evt):
-    """處理手機觸控移動"""
+def mousemove(evt):
     global mouse_pos
     evt.preventDefault()
-    
     if mouse_down:
         mouse_pos = get_pos(evt)
-        
-        # 限制拖拽範圍，避免拖太遠
-        mx, my = mouse_pos
-        max_pull_distance = 150  # 最大拖拽距離
-        dx, dy = SLING_X - mx, SLING_Y - my
-        distance = (dx**2 + dy**2)**0.5
-        
-        if distance > max_pull_distance:
-            ratio = max_pull_distance / distance
-            mouse_pos = (
-                SLING_X - dx * ratio,
-                SLING_Y - dy * ratio
-            )
 
-def handle_touch_end(evt):
-    """處理手機觸控結束"""
+def mouseup(evt):
     global mouse_down, projectile, shots_fired
     evt.preventDefault()
-    
     if mouse_down:
         mouse_down = False
-        canvas.style.opacity = "1.0"  # 恢復正常透明度
-        
         end_pos = get_pos(evt)
         dx, dy = SLING_X - end_pos[0], SLING_Y - end_pos[1]
-        
-        # 限制發射力量
-        max_force = 80
-        force = (dx**2 + dy**2)**0.5
-        if force > max_force:
-            ratio = max_force / force
-            dx *= ratio
-            dy *= ratio
-        
-        # 手機端調低發射速度
-        projectile = Bird(SLING_X, SLING_Y, dx * 0.2, dy * 0.2)
+        projectile = Bird(SLING_X, SLING_Y, dx * 0.25, dy * 0.25)
         shots_fired += 1
         update_shots_remaining()
 
-def handle_resize(_=None):
-    """處理窗口大小變化"""
-    global WIDTH, HEIGHT, SLING_X, SLING_Y
-    
-    # 更新畫布尺寸
-    WIDTH = min(window.innerWidth - 20, 800)
-    HEIGHT = min(window.innerHeight - 100, 500)
-    
-    canvas.width = WIDTH
-    canvas.height = HEIGHT
-    canvas.style.width = f"{WIDTH}px"
-    canvas.style.height = f"{HEIGHT}px"
-    
-    # 更新彈弓位置
-    SLING_X, SLING_Y = int(WIDTH * 0.15), int(HEIGHT * 0.75)
-    
-    # 重新初始化遊戲
-    if game_phase == "playing":
-        adjust_pig_positions()
-
-# 綁定事件 - 針對手機優化
-canvas.bind("mousedown", handle_touch_start)
-canvas.bind("touchstart", handle_touch_start)
-canvas.bind("touchmove", handle_touch_move)
-canvas.bind("touchend", handle_touch_end)
-
-# 綁定窗口大小變化事件
-window.bind("resize", handle_resize)
-
-# 初始調整大小
-handle_resize()
+# 綁定事件
+canvas.bind("mousedown", mousedown)
+window.bind("mousemove", mousemove) # 在視窗監聽確保拖出邊界也能運作
+window.bind("mouseup", mouseup)
+canvas.bind("touchstart", mousedown)
+canvas.bind("touchmove", mousemove)
+canvas.bind("touchend", mouseup)
 
 # ------------------------------------------
 # 繪圖與主迴圈
 # ------------------------------------------
 def draw_sling():
-    if game_phase != "playing": 
-        return
-        
-    ctx.strokeStyle = "rgba(139, 69, 19, 0.8)"  # 半透明的深棕色
-    ctx.lineWidth = 3
-    
+    if game_phase != "playing": return
+    ctx.strokeStyle, ctx.lineWidth = "black", 4
     if mouse_down:
         mx, my = mouse_pos
-        
-        # 繪製橡皮筋
-        ctx.beginPath()
-        ctx.moveTo(SLING_X - 5, SLING_Y)
-        ctx.lineTo(mx, my)
-        ctx.stroke()
-        
-        ctx.beginPath()
-        ctx.moveTo(SLING_X + 5, SLING_Y)
-        ctx.lineTo(mx, my)
-        ctx.stroke()
-        
-        # 繪製準備發射的鳥
-        if bird_img.complete:
-            ctx.drawImage(bird_img, mx - 15, my - 15, 30, 30)
-        
-        # 繪製力量指示器
-        dx, dy = SLING_X - mx, SLING_Y - my
-        force = (dx**2 + dy**2)**0.5
-        
-        if force > 10:
+        for offset in [-5, 5]:
             ctx.beginPath()
-            ctx.arc(SLING_X, SLING_Y, 5, 0, 2 * 3.14159)
-            ctx.fillStyle = "rgba(255, 0, 0, 0.5)"
-            ctx.fill()
-            
-            ctx.beginPath()
-            ctx.moveTo(SLING_X, SLING_Y)
+            ctx.moveTo(SLING_X + offset, SLING_Y)
             ctx.lineTo(mx, my)
-            ctx.strokeStyle = "rgba(255, 0, 0, 0.3)"
-            ctx.lineWidth = 2
             ctx.stroke()
-    
+        if bird_img.complete:
+            ctx.drawImage(bird_img, mx - 17, my - 17, 35, 35)
     elif projectile is None and shots_fired < MAX_SHOTS:
         if bird_img.complete:
-            ctx.drawImage(bird_img, SLING_X - 15, SLING_Y - 15, 30, 30)
+            ctx.drawImage(bird_img, SLING_X - 17, SLING_Y - 17, 35, 35)
 
 def send_score():
     global sent
-    if sent: 
-        return
+    if sent: return
     sent = True
-    try:
-        req = ajax.ajax()
-        req.open("POST", "/submit_score", True)
-        req.set_header("Content-Type", "application/json")
-        req.send(window.JSON.stringify({"score": total_score}))
-    except:
-        pass  # 如果提交失敗，繼續遊戲
+    req = ajax.ajax()
+    req.open("POST", "/submit_score", True)
+    req.set_header("Content-Type", "application/json")
+    req.send(window.JSON.stringify({"score": total_score}))
 
 def loop():
     global projectile, game_phase, game_over_countdown
-    
-    # 清除畫布
     ctx.clearRect(0, 0, WIDTH, HEIGHT)
     
-    # 繪製背景
-    ctx.fillStyle = "#87CEEB"  # 天空藍
-    ctx.fillRect(0, 0, WIDTH, HEIGHT * 0.7)
-    
-    ctx.fillStyle = "#8B4513"  # 土地棕
-    ctx.fillRect(0, HEIGHT * 0.7, WIDTH, HEIGHT * 0.3)
-    
-    # 繪製彈弓架
-    ctx.fillStyle = "#8B4513"
-    ctx.fillRect(SLING_X - 15, SLING_Y - 40, 30, 60)
-    ctx.fillRect(SLING_X - 30, SLING_Y, 60, 10)
-    
-    # 更新和繪製豬
+    # 更新每隻豬的狀態
     for p in pigs: 
         p.update(pigs)
     
+    # 繪製豬
     for p in pigs: 
         p.draw()
     
-    # 更新和繪製鳥
     if projectile:
         projectile.update()
         projectile.draw()
-        if not projectile.active: 
-            projectile = None
-    
-    # 繪製彈弓和UI
+        if not projectile.active: projectile = None
+
     if game_phase == "playing":
         draw_sling()
-        
-        # 繪製分數和剩餘發射次數
-        ctx.fillStyle = "white"
-        ctx.font = "bold 20px Arial"
-        ctx.fillText(f"分數: {total_score}", 10, 30)
-        ctx.fillText(f"剩餘: {MAX_SHOTS - shots_fired}", 10, 60)
-        
-        # 檢查遊戲是否結束
+        # 檢查是否還有豬存活
         alive_pigs = [p for p in pigs if p.alive]
         if not alive_pigs or (shots_fired >= MAX_SHOTS and projectile is None):
             game_phase, game_over_countdown = "game_over", 90
             send_score()
-    
     elif game_phase == "game_over":
-        # 半透明黑色遮罩
         ctx.fillStyle = "rgba(0, 0, 0, 0.7)"
         ctx.fillRect(0, 0, WIDTH, HEIGHT)
-        
-        # 遊戲結束文字
-        ctx.fillStyle = "white"
-        ctx.textAlign = "center"
-        ctx.font = "bold 32px Arial"
-        ctx.fillText("遊戲結束", WIDTH // 2, HEIGHT // 2 - 40)
-        
-        ctx.font = "24px Arial"
-        ctx.fillText(f"最終分數: {total_score}", WIDTH // 2, HEIGHT // 2)
-        
-        ctx.font = "18px Arial"
-        ctx.fillText(f"{game_over_countdown // 30}秒後重新開始", WIDTH // 2, HEIGHT // 2 + 40)
-        
+        ctx.fillStyle, ctx.textAlign = "white", "center"
+        ctx.font = "40px Arial"
+        ctx.fillText("Game Over", WIDTH // 2, HEIGHT // 2 - 20)
+        ctx.fillText(f"Score: {total_score}", WIDTH // 2, HEIGHT // 2 + 30)
         game_over_countdown -= 1
-        if game_over_countdown <= 0: 
-            start_new_game()
+        if game_over_countdown <= 0: start_new_game()
 
-# 啟動遊戲迴圈
 timer.set_interval(loop, 30)
 start_new_game()
-
-# 在手機瀏覽器上禁用滾動
-document.body.style.overflow = "hidden"
-document.body.style.touchAction = "none"
-
-# 添加CSS樣式確保更好的觸控體驗
-style = html.STYLE("""
-    canvas {
-        display: block;
-        margin: 10px auto;
-        border: 2px solid #333;
-        border-radius: 10px;
-        background-color: #f0f0f0;
-        touch-action: none; /* 防止瀏覽器處理觸控手勢 */
-    }
-    body {
-        margin: 0;
-        padding: 0;
-        background-color: #222;
-        overflow: hidden;
-        user-select: none; /* 防止文本選擇 */
-        -webkit-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-    }
-    @media (max-width: 600px) {
-        canvas {
-            margin: 5px auto;
-            border-width: 1px;
-        }
-    }
-""")
-document.head <= style
