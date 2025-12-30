@@ -63,19 +63,84 @@ class Pig:
     def hit(self, px, py):
         return self.alive and self.x <= px <= self.x + self.w and self.y <= py <= self.y + self.h
 
+    def check_collision(self, other_pig):
+        """檢查與另一隻豬是否重疊"""
+        return (self.x < other_pig.x + other_pig.w and 
+                self.x + self.w > other_pig.x and
+                self.y < other_pig.y + other_pig.h and
+                self.y + self.h > other_pig.y)
+
     def relocate(self, other_pigs):
-        MIN_DISTANCE = 120
+        """重新定位豬的位置，確保不會與其他豬重疊"""
+        MAX_ATTEMPTS = 100
         MIN_X, MAX_X = 450, WIDTH - self.w - 120
         MIN_Y, MAX_Y = 200, HEIGHT - self.h - 15
-        for _ in range(50): # 限制嘗試次數防止死循環
+        
+        for attempt in range(MAX_ATTEMPTS):
+            # 嘗試隨機位置
             new_x = MIN_X + random() * (MAX_X - MIN_X)
             new_y = MIN_Y + random() * (MAX_Y - MIN_Y)
-            too_close = any(abs(new_x - p.x) < MIN_DISTANCE and abs(new_y - p.y) < MIN_DISTANCE 
-                            for p in other_pigs if p is not self and p.alive)
-            if not too_close:
-                self.x, self.y = new_x, new_y
+            
+            # 臨時設定位置以檢查碰撞
+            old_x, old_y = self.x, self.y
+            self.x, self.y = new_x, new_y
+            
+            # 檢查是否與其他豬重疊
+            collision = False
+            for pig in other_pigs:
+                if pig is not self and pig.alive and self.check_collision(pig):
+                    collision = True
+                    break
+            
+            # 如果沒有碰撞，保持新位置
+            if not collision:
                 self.last_hit_time = time.time()  # 重置計時器
-                break
+                return True
+            
+            # 如果有碰撞，恢復原位置
+            self.x, self.y = old_x, old_y
+        
+        # 如果找不到合適位置，嘗試網格佈局
+        return self.find_grid_position(other_pigs, MIN_X, MAX_X, MIN_Y, MAX_Y)
+
+    def find_grid_position(self, other_pigs, min_x, max_x, min_y, max_y):
+        """在網格中尋找可用位置"""
+        grid_size = 60  # 網格大小
+        
+        # 計算可用的網格單元
+        cols = int((max_x - min_x) / grid_size)
+        rows = int((max_y - min_y) / grid_size)
+        
+        # 嘗試所有網格位置
+        for r in range(rows):
+            for c in range(cols):
+                new_x = min_x + c * grid_size
+                new_y = min_y + r * grid_size
+                
+                # 臨時設定位置以檢查碰撞
+                old_x, old_y = self.x, self.y
+                self.x, self.y = new_x, new_y
+                
+                # 檢查是否與其他豬重疊
+                collision = False
+                for pig in other_pigs:
+                    if pig is not self and pig.alive and self.check_collision(pig):
+                        collision = True
+                        break
+                
+                # 如果沒有碰撞，保持新位置
+                if not collision:
+                    self.last_hit_time = time.time()  # 重置計時器
+                    return True
+                
+                # 如果有碰撞，恢復原位置
+                self.x, self.y = old_x, old_y
+        
+        # 如果還是找不到位置，放在一個默認位置
+        self.x = min_x + random() * (max_x - min_x)
+        self.y = min_y + random() * (max_y - min_y)
+        self.last_hit_time = time.time()
+        return False
 
     def update(self, other_pigs):
         if not self.alive:
@@ -89,12 +154,26 @@ class Pig:
         # 增加閒置計時器的隨機移動效果（更自然的移動）
         self.idle_timer += 1
         if self.idle_timer > 60:  # 每60幀檢查一次隨機移動
-            if random() < 0.1:  # 10%機率觸發小範圍隨機移動
+            if random() < 0.05:  # 5%機率觸發小範圍隨機移動
+                old_x, old_y = self.x, self.y
                 self.x += (random() - 0.5) * 20
                 self.y += (random() - 0.5) * 10
+                
                 # 確保不會移出邊界
                 self.x = max(450, min(WIDTH - self.w - 120, self.x))
                 self.y = max(200, min(HEIGHT - self.h - 15, self.y))
+                
+                # 檢查是否與其他豬重疊
+                collision = False
+                for pig in other_pigs:
+                    if pig is not self and pig.alive and self.check_collision(pig):
+                        collision = True
+                        break
+                
+                # 如果發生碰撞，恢復原位置
+                if collision:
+                    self.x, self.y = old_x, old_y
+                
                 self.idle_timer = 0
 
 class Bird:
@@ -132,15 +211,68 @@ def init_level():
     global pigs
     # 建立6隻豬，每隻大小不同（最大不超過1.5倍）
     pigs = []
+    
+    # 預設的位置（這些是原先豬會出現的位置）
+    original_positions = [
+        (500, 250),  # 右上角
+        (600, 300),  # 右中
+        (700, 200),  # 右下角
+        (550, 200),  # 右上方
+        (650, 250),  # 右中偏上
+        (500, 300)   # 右中偏下
+    ]
+    
+    # 調整位置確保不會重疊
     for i in range(6):
         # 創建不同大小的豬，從0.8倍到1.5倍
         size_factor = 0.8 + (i / 5) * 0.7  # 均勻分布從0.8到1.5
-        pig = Pig(0, 0, size_factor)
+        pig = Pig(original_positions[i][0], original_positions[i][1], size_factor)
         pigs.append(pig)
     
-    # 初始位置
-    for p in pigs: 
-        p.relocate(pigs)
+    # 檢查並調整重疊的豬
+    adjust_pig_positions()
+
+def adjust_pig_positions():
+    """調整豬的位置，確保它們不會重疊"""
+    MAX_ATTEMPTS = 100
+    MIN_X, MAX_X = 450, WIDTH - 40 - 120  # 考慮豬的最大寬度
+    MIN_Y, MAX_Y = 200, HEIGHT - 40 - 15  # 考慮豬的最大高度
+    
+    for i in range(len(pigs)):
+        pig = pigs[i]
+        
+        # 檢查與其他豬的碰撞
+        for attempt in range(MAX_ATTEMPTS):
+            collision = False
+            for j in range(len(pigs)):
+                if i != j and pigs[j].alive and pig.check_collision(pigs[j]):
+                    collision = True
+                    break
+            
+            # 如果沒有碰撞，繼續檢查下一隻豬
+            if not collision:
+                break
+            
+            # 如果有碰撞，移動這隻豬到新位置
+            # 計算新位置（在原位置的基礎上稍微偏移）
+            offset_x = (random() - 0.5) * 100
+            offset_y = (random() - 0.5) * 80
+            pig.x = max(MIN_X, min(MAX_X, pig.x + offset_x))
+            pig.y = max(MIN_Y, min(MAX_Y, pig.y + offset_y))
+        
+        # 如果還是碰撞，使用網格佈局
+        if collision:
+            # 使用網格佈局重新定位
+            cols = 3  # 3列
+            rows = 2  # 2行
+            grid_width = (MAX_X - MIN_X) / cols
+            grid_height = (MAX_Y - MIN_Y) / rows
+            
+            row = i // cols
+            col = i % cols
+            
+            pig.x = MIN_X + col * grid_width + grid_width / 2 - pig.w / 2
+            pig.y = MIN_Y + row * grid_height + grid_height / 2 - pig.h / 2
 
 def start_new_game():
     global shots_fired, total_score, projectile, sent, game_phase, game_over_countdown
@@ -222,15 +354,6 @@ def draw_sling():
         if bird_img.complete:
             ctx.drawImage(bird_img, SLING_X - 17, SLING_Y - 17, 35, 35)
 
-def draw_pig_info():
-    # 顯示豬的閒置時間資訊（除錯用）
-    ctx.fillStyle = "white"
-    ctx.font = "12px Arial"
-    for i, pig in enumerate(pigs):
-        if pig.alive:
-            idle_time = time.time() - pig.last_hit_time
-            ctx.fillText(f"P{i+1}: {int(30 - idle_time)}s", pig.x, pig.y - 5)
-
 def send_score():
     global sent
     if sent: return
@@ -251,9 +374,6 @@ def loop():
     # 繪製豬
     for p in pigs: 
         p.draw()
-    
-    # 繪製豬的閒置時間資訊（可選）
-    # draw_pig_info()
     
     if projectile:
         projectile.update()
