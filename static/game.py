@@ -10,9 +10,9 @@ WIDTH, HEIGHT = 800, 400
 bird_img = html.IMG(src="/static/images/bird.png")
 pig_img = html.IMG(src="/static/images/pig.png")
 
-# 遊戲常數
+# 遊戲常數 - 改成20發鳥
 SLING_X, SLING_Y = 120, 300
-MAX_SHOTS = 10
+MAX_SHOTS = 20  # 改成20發
 
 # 遊戲狀態
 shots_fired = 0
@@ -49,6 +49,9 @@ class Pig:
         ]
         self.last_hit_time = time.time()  # 記錄最後一次被擊中的時間
         self.idle_timer = 0  # 閒置計時器
+        self.move_timer = 0  # 移動計時器
+        self.move_speed_x = (random() - 0.5) * 1.5  # 初始隨機移動速度
+        self.move_speed_y = (random() - 0.5) * 1.5
 
     def draw(self):
         if self.alive:
@@ -95,6 +98,9 @@ class Pig:
             # 如果沒有碰撞，保持新位置
             if not collision:
                 self.last_hit_time = time.time()  # 重置計時器
+                # 重新設定隨機移動速度
+                self.move_speed_x = (random() - 0.5) * 1.5
+                self.move_speed_y = (random() - 0.5) * 1.5
                 return True
             
             # 如果有碰撞，恢復原位置
@@ -131,6 +137,9 @@ class Pig:
                 # 如果沒有碰撞，保持新位置
                 if not collision:
                     self.last_hit_time = time.time()  # 重置計時器
+                    # 重新設定隨機移動速度
+                    self.move_speed_x = (random() - 0.5) * 1.5
+                    self.move_speed_y = (random() - 0.5) * 1.5
                     return True
                 
                 # 如果有碰撞，恢復原位置
@@ -140,41 +149,96 @@ class Pig:
         self.x = min_x + random() * (max_x - min_x)
         self.y = min_y + random() * (max_y - min_y)
         self.last_hit_time = time.time()
+        # 重新設定隨機移動速度
+        self.move_speed_x = (random() - 0.5) * 1.5
+        self.move_speed_y = (random() - 0.5) * 1.5
         return False
 
     def update(self, other_pigs):
         if not self.alive:
             return
             
-        # 檢查是否超過30秒沒被擊中
-        current_time = time.time()
-        if current_time - self.last_hit_time > 30:  # 30秒
-            self.relocate(other_pigs)
+        # 增加移動計時器
+        self.move_timer += 1
+        
+        # 豬一開始就隨機移動，不需要等待30秒
+        # 每30幀改變一次移動方向
+        if self.move_timer > 30:
+            # 隨機改變移動方向
+            self.move_speed_x += (random() - 0.5) * 0.5
+            self.move_speed_y += (random() - 0.5) * 0.5
             
-        # 增加閒置計時器的隨機移動效果（更自然的移動）
+            # 限制最大速度
+            max_speed = 2.0
+            self.move_speed_x = max(-max_speed, min(max_speed, self.move_speed_x))
+            self.move_speed_y = max(-max_speed, min(max_speed, self.move_speed_y))
+            
+            self.move_timer = 0
+        
+        # 更新位置
+        old_x, old_y = self.x, self.y
+        self.x += self.move_speed_x
+        self.y += self.move_speed_y
+        
+        # 邊界檢查
+        MIN_X, MAX_X = 450, WIDTH - self.w - 120
+        MIN_Y, MAX_Y = 200, HEIGHT - self.h - 15
+        
+        # 如果碰到邊界，反彈
+        if self.x < MIN_X or self.x > MAX_X:
+            self.move_speed_x = -self.move_speed_x * 0.8  # 反彈並減速
+            self.x = max(MIN_X, min(MAX_X, self.x))
+        
+        if self.y < MIN_Y or self.y > MAX_Y:
+            self.move_speed_y = -self.move_speed_y * 0.8  # 反彈並減速
+            self.y = max(MIN_Y, min(MAX_Y, self.y))
+        
+        # 檢查是否與其他豬碰撞
+        collision = False
+        collision_pig = None
+        for pig in other_pigs:
+            if pig is not self and pig.alive and self.check_collision(pig):
+                collision = True
+                collision_pig = pig
+                break
+        
+        # 如果發生碰撞，反彈並稍微分開
+        if collision:
+            # 恢復到碰撞前的位置
+            self.x, self.y = old_x, old_y
+            
+            # 計算反彈方向
+            dx = self.x - collision_pig.x
+            dy = self.y - collision_pig.y
+            
+            # 避免除以零
+            distance = max(0.1, (dx**2 + dy**2)**0.5)
+            
+            # 標準化方向向量
+            dx /= distance
+            dy /= distance
+            
+            # 反彈
+            self.move_speed_x = dx * 1.5
+            self.move_speed_y = dy * 1.5
+            
+            # 稍微分開
+            self.x += dx * 5
+            self.y += dy * 5
+            
+            # 確保不超出邊界
+            self.x = max(MIN_X, min(MAX_X, self.x))
+            self.y = max(MIN_Y, min(MAX_Y, self.y))
+        
+        # 原有的閒置計時器邏輯（現在主要用於隨機移動）
         self.idle_timer += 1
-        if self.idle_timer > 60:  # 每60幀檢查一次隨機移動
-            if random() < 0.05:  # 5%機率觸發小範圍隨機移動
-                old_x, old_y = self.x, self.y
-                self.x += (random() - 0.5) * 20
-                self.y += (random() - 0.5) * 10
-                
-                # 確保不會移出邊界
-                self.x = max(450, min(WIDTH - self.w - 120, self.x))
-                self.y = max(200, min(HEIGHT - self.h - 15, self.y))
-                
-                # 檢查是否與其他豬重疊
-                collision = False
-                for pig in other_pigs:
-                    if pig is not self and pig.alive and self.check_collision(pig):
-                        collision = True
-                        break
-                
-                # 如果發生碰撞，恢復原位置
-                if collision:
-                    self.x, self.y = old_x, old_y
-                
-                self.idle_timer = 0
+        if self.idle_timer > 60:  # 每60幀檢查一次
+            # 有10%的機率改變移動方向
+            if random() < 0.1:
+                self.move_speed_x = (random() - 0.5) * 2.0
+                self.move_speed_y = (random() - 0.5) * 2.0
+            
+            self.idle_timer = 0
 
 class Bird:
     def __init__(self, x, y, vx, vy):
