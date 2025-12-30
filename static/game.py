@@ -273,7 +273,7 @@ pigs = []
 
 def init_level():
     global pigs
-    # 建立6隻豬，每隻大小不同（最大不超過1.5倍）
+    # 建立6隻豬，每隻大小不同（最大不超過原本的1.5倍）
     pigs = []
     
     # 預設的位置（這些是原先豬會出現的位置）
@@ -418,6 +418,19 @@ def draw_sling():
         if bird_img.complete:
             ctx.drawImage(bird_img, SLING_X - 17, SLING_Y - 17, 35, 35)
 
+def draw_score_and_shots():
+    """在畫布上繪製分數和剩餘射擊次數"""
+    # 繪製分數
+    ctx.fillStyle = "white"
+    ctx.font = "bold 24px Arial"
+    ctx.textAlign = "left"
+    ctx.fillText(f"分数：{total_score}", 20, 40)
+    
+    # 繪製剩餘射擊次數
+    ctx.fillStyle = "white"
+    ctx.font = "bold 24px Arial"
+    ctx.fillText(f"剩余射击次数：{MAX_SHOTS - shots_fired}", 20, 80)
+
 def send_score():
     global sent
     if sent: return
@@ -430,6 +443,21 @@ def send_score():
 def loop():
     global projectile, game_phase, game_over_countdown
     ctx.clearRect(0, 0, WIDTH, HEIGHT)
+    
+    # 繪製遊戲背景
+    ctx.fillStyle = "#87CEEB"  # 天空藍
+    ctx.fillRect(0, 0, WIDTH, HEIGHT * 0.7)
+    
+    ctx.fillStyle = "#8B4513"  # 土地棕
+    ctx.fillRect(0, HEIGHT * 0.7, WIDTH, HEIGHT * 0.3)
+    
+    # 繪製彈弓架
+    ctx.fillStyle = "#8B4513"
+    ctx.fillRect(SLING_X - 15, SLING_Y - 40, 30, 60)
+    ctx.fillRect(SLING_X - 30, SLING_Y, 60, 10)
+    
+    # 繪製分數和剩餘射擊次數
+    draw_score_and_shots()
     
     # 更新每隻豬的狀態
     for p in pigs: 
@@ -456,8 +484,8 @@ def loop():
         ctx.fillRect(0, 0, WIDTH, HEIGHT)
         ctx.fillStyle, ctx.textAlign = "white", "center"
         ctx.font = "40px Arial"
-        ctx.fillText("Game Over", WIDTH // 2, HEIGHT // 2 - 20)
-        ctx.fillText(f"Score: {total_score}", WIDTH // 2, HEIGHT // 2 + 30)
+        ctx.fillText("游戏结束", WIDTH // 2, HEIGHT // 2 - 20)
+        ctx.fillText(f"最终分数：{total_score}", WIDTH // 2, HEIGHT // 2 + 30)
         game_over_countdown -= 1
         if game_over_countdown <= 0: start_new_game()
 
