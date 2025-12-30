@@ -1,5 +1,5 @@
 from browser import document, html, timer, ajax, window
-from random import random
+from random import random, uniform
 
 canvas = document["gameCanvas"]
 ctx = canvas.getContext("2d")
@@ -37,6 +37,43 @@ class Pig:
             (105, -10, 15, 50),
             (0, -25, 120, 15)
         ]
+        # 新增移動屬性
+        self.vx = uniform(-1.5, 1.5)  # 隨機水平速度
+        self.vy = uniform(-1.5, 1.5)  # 隨機垂直速度
+        self.move_counter = 0
+        self.move_duration = int(uniform(60, 120))  # 隨機移動持續時間
+
+    def update(self):
+        if not self.alive:
+            return
+            
+        self.move_counter += 1
+        
+        # 移動小豬
+        self.x += self.vx
+        self.y += self.vy
+        
+        # 邊界檢查
+        if self.x < 450:
+            self.x = 450
+            self.vx = abs(self.vx)  # 向右反彈
+        elif self.x > WIDTH - self.w - 120:
+            self.x = WIDTH - self.w - 120
+            self.vx = -abs(self.vx)  # 向左反彈
+            
+        if self.y < 200:
+            self.y = 200
+            self.vy = abs(self.vy)  # 向下反彈
+        elif self.y > HEIGHT - self.h - 15:
+            self.y = HEIGHT - self.h - 15
+            self.vy = -abs(self.vy)  # 向上反彈
+        
+        # 定期改變移動方向
+        if self.move_counter >= self.move_duration:
+            self.vx = uniform(-1.5, 1.5)
+            self.vy = uniform(-1.5, 1.5)
+            self.move_counter = 0
+            self.move_duration = int(uniform(60, 120))
 
     def draw(self):
         if self.alive:
@@ -61,6 +98,11 @@ class Pig:
                             for p in other_pigs if p is not self and p.alive)
             if not too_close:
                 self.x, self.y = new_x, new_y
+                # 重置移動屬性
+                self.vx = uniform(-1.5, 1.5)
+                self.vy = uniform(-1.5, 1.5)
+                self.move_counter = 0
+                self.move_duration = int(uniform(60, 120))
                 break
 
 class Bird:
@@ -71,12 +113,16 @@ class Bird:
 
     def update(self):
         global total_score
-        if not self.active: return
+        if not self.active: 
+            return
+            
         self.vy += 0.35
         self.x += self.vx
         self.y += self.vy
+        
         if self.y > HEIGHT - self.h or self.x > WIDTH or self.x < 0:
             self.active = False
+            
         for p in pigs:
             if p.hit(self.x + self.w / 2, self.y + self.h / 2):
                 p.relocate(pigs)
@@ -96,8 +142,10 @@ pigs = []
 
 def init_level():
     global pigs
-    pigs = [Pig(0, 0) for _ in range(3)]
-    for p in pigs: p.relocate(pigs)
+    # 改為創建四隻小豬
+    pigs = [Pig(0, 0) for _ in range(4)]
+    for p in pigs: 
+        p.relocate(pigs)
 
 def start_new_game():
     global shots_fired, total_score, projectile, sent, game_phase, game_over_countdown
@@ -164,7 +212,9 @@ canvas.bind("touchend", mouseup)
 # 繪圖與主迴圈
 # ------------------------------------------
 def draw_sling():
-    if game_phase != "playing": return
+    if game_phase != "playing": 
+        return
+        
     ctx.strokeStyle, ctx.lineWidth = "black", 4
     if mouse_down:
         mx, my = mouse_pos
@@ -181,7 +231,9 @@ def draw_sling():
 
 def send_score():
     global sent
-    if sent: return
+    if sent: 
+        return
+        
     sent = True
     req = ajax.ajax()
     req.open("POST", "/submit_score", True)
@@ -191,11 +243,20 @@ def send_score():
 def loop():
     global projectile, game_phase, game_over_countdown
     ctx.clearRect(0, 0, WIDTH, HEIGHT)
-    for p in pigs: p.draw()
+    
+    # 更新每隻小豬的位置
+    for p in pigs: 
+        p.update()
+    
+    # 繪製所有小豬
+    for p in pigs: 
+        p.draw()
+        
     if projectile:
         projectile.update()
         projectile.draw()
-        if not projectile.active: projectile = None
+        if not projectile.active: 
+            projectile = None
 
     if game_phase == "playing":
         draw_sling()
@@ -210,7 +271,8 @@ def loop():
         ctx.fillText("Game Over", WIDTH // 2, HEIGHT // 2 - 20)
         ctx.fillText(f"Score: {total_score}", WIDTH // 2, HEIGHT // 2 + 30)
         game_over_countdown -= 1
-        if game_over_countdown <= 0: start_new_game()
+        if game_over_countdown <= 0: 
+            start_new_game()
 
 timer.set_interval(loop, 30)
 start_new_game()
